@@ -66,6 +66,22 @@ claude --plugin-dir ./claude-inline-ask
 
 Then switch to fullscreen with `/fullscreen` if you are not already in it, and see **Use** below.
 
+## Updating
+
+If you installed it with `/plugin install`, a copy was made at install time, so new versions do not
+arrive by themselves. To update:
+
+```sh
+claude plugin update inline-ask
+```
+
+then run `/reload-plugins` in any session that is already open (a new session picks it up on its own).
+Reloading resets the mod's memory, so threads already on screen fall back to the bottom of the
+transcript (see Limitations).
+
+If you cloned the repository and run it with `--plugin-dir`, `git pull` is enough: Claude Code reloads
+the mod when its files change.
+
 ## Use
 
 1. Select text in one of Claude's replies with the mouse.
