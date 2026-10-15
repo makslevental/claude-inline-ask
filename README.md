@@ -28,8 +28,8 @@ claude --plugin-dir /path/to/claude-inline-ask
 3. The question appears under the paragraph you selected from, and the answer streams in beneath it.
    Tool calls the answer makes are summarised as `⎿ N tool calls`. Press Escape to interrupt; the thread
    shows `(interrupted)` and keeps the partial answer.
-4. To follow up on an answer, select text inside the thread and `/ask` again. The new thread goes
-   below the one you selected from.
+4. To follow up on an answer, select text inside the thread and `/ask` again. The follow-up appears
+   below the answer you selected from, indented one level deeper.
 
 Nothing selected, or no question, shows a short toast and sends nothing.
 

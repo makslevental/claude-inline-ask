@@ -263,6 +263,8 @@ describe('/ask thread', () => {
     const first = await $.session.append(row('response', 'u-response', 'x'))
     await $.ui.render(render('AssistantMessage', first.uuid ?? 'u-response', { text: 'The answer is forty-two.', isFirstOfReply: true }))
     await $.turn.complete(completed('answer'))
+    // A thread on its own is not nested (`marginLeft` 0 or absent, never 2).
+    expect(await drawAnchored($)).not.toMatch(/marginLeft\W+2\b/)
 
     // The engine reports the anchored block's id for a selection inside the drawn thread.
     selection = { text: 'forty-two', requestId: 'm1' }
@@ -288,6 +290,8 @@ describe('/ask thread', () => {
     expect(anchored.indexOf('The answer is forty-two.')).toBeLessThan(anchored.indexOf('and why?'))
     expect(anchored.indexOf('and why?')).toBeLessThan(anchored.indexOf('Because.'))
     expect(anchored.indexOf('Because.')).toBeLessThan(anchored.indexOf('Third.'))
+    // The follow-up is nested one level beneath the thread it quotes.
+    expect(anchored).toMatch(/marginLeft\W+2\b/)
   })
 
   test('a selection in no reply and no thread is still reported', async ($, on) => {

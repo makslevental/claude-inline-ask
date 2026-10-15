@@ -13,6 +13,8 @@ export type Thread = {
   /** reply block id → latest text, in arrival order */
   replyBlocks: Map<string, string>
   toolCallIds: Set<string>
+  /** The thread whose question or answer this one follows up on; drawn nested beneath it. */
+  parent?: Thread
 }
 
 /** What a stored row contributes to the active thread. */
@@ -52,7 +54,7 @@ export function createThreads() {
   return {
     all: (): readonly Thread[] => threads,
 
-    add(anchor: Anchor, question: string, submittedText: string): Thread {
+    add(anchor: Anchor, question: string, submittedText: string, parent?: Thread): Thread {
       const thread: Thread = {
         anchor,
         question,
@@ -60,6 +62,7 @@ export function createThreads() {
         status: 'pending',
         replyBlocks: new Map(),
         toolCallIds: new Set(),
+        ...(parent !== undefined ? { parent } : {}),
       }
       threads.push(thread)
       return thread

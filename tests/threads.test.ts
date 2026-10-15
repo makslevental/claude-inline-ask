@@ -193,4 +193,11 @@ describe('createThreads', () => {
     const b = threads.add({ messageId: 'm2', paragraphIndex: 0 }, 'why the sky, again?', 'P2')
     expect(threads.findByText('why the sky')).toBe(b)
   })
+  test('add stores the parent a follow-up nests under', () => {
+    const threads = createThreads()
+    const root = threads.add(anchor, 'q', 'P1')
+    const child = threads.add(anchor, 'more?', 'P2', root)
+    expect(root.parent).toBeUndefined()
+    expect(child.parent).toBe(root)
+  })
 })
