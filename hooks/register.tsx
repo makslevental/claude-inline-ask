@@ -29,13 +29,14 @@ export const register: Register = (on) => {
       $.ui.toast('Select text in a reply first (needs fullscreen: /fullscreen)')
       return {}
     }
-    const anchor = locateAnchor(selection, blocks)
+    // A selection inside a drawn thread anchors the follow-up where that thread is anchored.
+    const anchor = locateAnchor(selection, blocks) ?? threads.findByText(selection.text)?.anchor
     if (anchor === undefined) {
       $.ui.toast("Couldn't find the selection in one of Claude's replies")
       return {}
     }
     const text = buildPrompt(selection.text, question)
-    const thread = threads.add(anchor, question, text)
+    const thread = threads.add({ ...anchor }, question, text)
     $.ui.invalidate('ui.render')
     // The engine rejects a submit made inside this hook (it would wait on the turn the hook holds),
     // so submit from a timer. Not awaited: it resolves when the turn starts, and waits while Claude is busy.

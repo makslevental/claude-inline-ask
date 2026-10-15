@@ -6,7 +6,8 @@ type Selection = { text: string; requestId?: string } | undefined
 
 // Engine stand-ins beneath the plugin; returns what the plugin sent to toast and prompt.submit,
 // and how many times it asked for a redraw.
-function world(on: On, selection: Selection, dropReason?: string) {
+// `selection` may be a function, read on each `$.ui.selection()`, for tests that select twice.
+function world(on: On, selection: Selection | (() => Selection), dropReason?: string) {
   const clock = mock.clock(on)
   const toasts: string[] = []
   const submitted: string[] = []
@@ -15,7 +16,7 @@ function world(on: On, selection: Selection, dropReason?: string) {
     invalidations += 1
     return { value: undefined }
   })
-  on('ui.selection', () => ({ value: selection }))
+  on('ui.selection', () => ({ value: typeof selection === 'function' ? selection() : selection }))
   on('ui.toast', (_$, e) => {
     toasts.push(e.text)
     return { value: undefined }
@@ -131,16 +132,16 @@ const drawAnchored = async ($: Engine) =>
   JSON.stringify(await $.ui.render(render('AssistantMessage', 'm1', { text: ANCHORED, isFirstOfReply: true })))
 
 // The engine beneath a turn, with the anchored reply's paragraph selected.
-function turnWorld(on: On) {
-  const w = world(on, { text: 'Second paragraph', requestId: 'm1' })
+function turnWorld(on: On, selection: Selection | (() => Selection) = { text: 'Second paragraph', requestId: 'm1' }) {
+  const w = world(on, selection)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   return w
 }
 
 // /ask run up to its streamed reply (steps shared by the lifecycle tests).
-async function streamThread($: Engine, on: On) {
-  const w = turnWorld(on)
+async function streamThread($: Engine, on: On, selection?: () => Selection) {
+  const w = turnWorld(on, selection)
 
   await $.ui.render(render('AssistantMessage', 'm1', { text: ANCHORED, isFirstOfReply: true }))
   await $.command.run(ask('why?'))
@@ -172,7 +173,7 @@ async function streamThread($: Engine, on: On) {
   expect(anchored).toContain('The answer.')
   expect(anchored.indexOf('Second paragraph here.')).toBeLessThan(anchored.indexOf('why?'))
   expect(anchored.indexOf('why?')).toBeLessThan(anchored.indexOf('Third.'))
-  return { replyId: response.uuid ?? 'u-response' }
+  return { w, replyId: response.uuid ?? 'u-response' }
 }
 
 describe('/ask thread', () => {
@@ -247,5 +248,55 @@ describe('/ask thread', () => {
     const other = JSON.stringify(await $.ui.render(toolGroup('other')))
     expect(other).toContain('reply')
     expect(other).not.toContain('none')
+  })
+
+  test('a selection inside a drawn answer anchors a follow-up right below it', async ($, on) => {
+    let selection: Selection = { text: 'Second paragraph', requestId: 'm1' }
+    const w = turnWorld(on, () => selection)
+    await $.ui.render(render('AssistantMessage', 'm1', { text: ANCHORED, isFirstOfReply: true }))
+
+    // The first thread, answered and complete.
+    await $.command.run(ask('why?'))
+    await w.clock.advance(200)
+    await $.session.append(row('prompt', 'u-prompt', PROMPT))
+    await $.turn.start({ text: PROMPT, turnId: 't1' })
+    const first = await $.session.append(row('response', 'u-response', 'x'))
+    await $.ui.render(render('AssistantMessage', first.uuid ?? 'u-response', { text: 'The answer is forty-two.', isFirstOfReply: true }))
+    await $.turn.complete(completed('answer'))
+
+    // The engine reports the anchored block's id for a selection inside the drawn thread.
+    selection = { text: 'forty-two', requestId: 'm1' }
+    await $.command.run(ask('and why?'))
+    await w.clock.advance(200)
+    expect(w.toasts).toEqual([])
+    expect(w.submitted.length).toBe(2)
+    const followUp = w.submitted[1]!
+    expect(followUp).toContain('> forty-two')
+    expect(followUp).toContain('and why?')
+
+    await $.session.append(row('prompt', 'u-prompt-2', followUp))
+    await $.turn.start({ text: followUp, turnId: 't2' })
+    const second = await $.session.append(row('response', 'u-response-2', 'x'))
+    const reply = JSON.stringify(
+      await $.ui.render(render('AssistantMessage', second.uuid ?? 'u-response-2', { text: 'Because.', isFirstOfReply: true })),
+    )
+    expect(reply).toContain('"display":"none"')
+
+    const anchored = await drawAnchored($)
+    expect(anchored.indexOf('Second paragraph here.')).toBeLessThan(anchored.indexOf('why?'))
+    expect(anchored.indexOf('why?')).toBeLessThan(anchored.indexOf('The answer is forty-two.'))
+    expect(anchored.indexOf('The answer is forty-two.')).toBeLessThan(anchored.indexOf('and why?'))
+    expect(anchored.indexOf('and why?')).toBeLessThan(anchored.indexOf('Because.'))
+    expect(anchored.indexOf('Because.')).toBeLessThan(anchored.indexOf('Third.'))
+  })
+
+  test('a selection in no reply and no thread is still reported', async ($, on) => {
+    let selection: Selection = { text: 'Second paragraph', requestId: 'm1' }
+    const { w } = await streamThread($, on, () => selection)
+    selection = { text: 'nowhere to be found', requestId: 'm1' }
+    await $.command.run(ask('and why?'))
+    await w.clock.advance(200)
+    expect(w.toasts).toEqual(["Couldn't find the selection in one of Claude's replies"])
+    expect(w.submitted).toEqual([PROMPT])
   })
 })

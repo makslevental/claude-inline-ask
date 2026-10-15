@@ -1,3 +1,4 @@
+import { normalize } from './anchor'
 import type { Anchor } from './anchor'
 
 export type ThreadStatus = 'pending' | 'streaming' | 'done' | 'interrupted'
@@ -132,12 +133,20 @@ export function createThreads() {
       return true
     },
 
-    ownerOf(id: string): Thread | undefined {
-      return threads.find(t => t.userMessageId === id || t.replyBlocks.has(id) || t.toolCallIds.has(id))
+    /** The newest thread whose question or answer holds the selected text: a follow-up anchors where it does. */
+    findByText(selectedText: string): Thread | undefined {
+      const needle = normalize(selectedText)
+      if (needle === '') return undefined
+      for (let i = threads.length - 1; i >= 0; i--) {
+        const thread = threads[i]!
+        const text = normalize(thread.question + ' ' + [...thread.replyBlocks.values()].join(' '))
+        if (text.includes(needle)) return thread
+      }
+      return undefined
     },
 
-    anchoredAt(messageId: string, paragraphIndex: number): Thread[] {
-      return threads.filter(t => t.anchor.messageId === messageId && t.anchor.paragraphIndex === paragraphIndex)
+    ownerOf(id: string): Thread | undefined {
+      return threads.find(t => t.userMessageId === id || t.replyBlocks.has(id) || t.toolCallIds.has(id))
     },
   }
 }
