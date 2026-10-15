@@ -1,5 +1,6 @@
 import { describe, test, expect, mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import type { Engine } from 'claude-code/testing'
 
 type Selection = { text: string; requestId?: string } | undefined
 
@@ -78,5 +79,99 @@ describe('/ask', () => {
     await $.command.run(ask('why?'))
     await w.clock.advance(200)
     expect(w.toasts).toEqual(['Could not send the question: blocked by a policy'])
+  })
+})
+
+const ANCHORED = 'First paragraph.\n\nSecond paragraph here.\n\nThird.'
+const PROMPT = 'About this part of your earlier reply:\n> Second paragraph\n\nwhy?'
+
+const render = (component: string, requestId: string, props: object) =>
+  ({ component, requestId, surface: 'terminal', props }) as never
+
+const row = (door: 'prompt' | 'response', uuid: string, text: string) =>
+  (door === 'prompt'
+    ? {
+        message: { type: 'user', role: 'user', content: [{ type: 'text', text }] },
+        door,
+        origin: { kind: 'plugin', name: 'inline-ask', asUser: true },
+        uuid,
+      }
+    : {
+        message: { type: 'assistant', role: 'assistant', content: [{ type: 'thinking', thinking: text }] },
+        door,
+        origin: { kind: 'model', model: 'claude' },
+        uuid,
+      }) as never
+
+const completed = (reason: 'answer' | 'aborted') =>
+  ({ turnId: 't1', reason, answer: reason === 'answer' ? 'The answer.' : '', durationMs: 1, isAborted: reason === 'aborted' }) as never
+
+const drawAnchored = async ($: Engine) =>
+  JSON.stringify(await $.ui.render(render('AssistantMessage', 'm1', { text: ANCHORED, isFirstOfReply: true })))
+
+// The engine beneath a turn, then /ask run up to its streamed reply (steps shared by the lifecycle tests).
+async function streamThread($: Engine, on: On) {
+  const w = world(on, { text: 'Second paragraph', requestId: 'm1' })
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+  on('ui.invalidate', () => ({ value: undefined }))
+
+  await $.ui.render(render('AssistantMessage', 'm1', { text: ANCHORED, isFirstOfReply: true }))
+  await $.command.run(ask('why?'))
+  await w.clock.advance(200)
+  expect(w.submitted).toEqual([PROMPT])
+
+  // The prompt row is stored before the turn starts; the response row arrives holding only thinking.
+  const prompt = await $.session.append(row('prompt', 'u-prompt', PROMPT))
+  await $.turn.start({ text: PROMPT, turnId: 't1' })
+  const response = await $.session.append(row('response', 'u-response', 'x'))
+
+  const user = JSON.stringify(
+    await $.ui.render(
+      render('UserMessage', prompt.uuid ?? 'u-prompt', {
+        text: PROMPT,
+        origin: { kind: 'plugin', name: 'inline-ask', asUser: true },
+        isExpanded: false,
+      }),
+    ),
+  )
+  expect(user).toContain('"display":"none"')
+  const reply = JSON.stringify(
+    await $.ui.render(render('AssistantMessage', response.uuid ?? 'u-response', { text: 'The answer.', isFirstOfReply: true })),
+  )
+  expect(reply).toContain('"display":"none"')
+
+  const anchored = await drawAnchored($)
+  expect(anchored).toContain('why?')
+  expect(anchored).toContain('The answer.')
+  expect(anchored.indexOf('Second paragraph here.')).toBeLessThan(anchored.indexOf('why?'))
+  expect(anchored.indexOf('why?')).toBeLessThan(anchored.indexOf('Third.'))
+}
+
+describe('/ask thread', () => {
+  test('thread lifecycle binds, hides and draws inline', async ($, on) => {
+    await streamThread($, on)
+    await $.turn.complete(completed('answer'))
+    const done = await drawAnchored($)
+    expect(done).toContain('The answer.')
+    expect(done).not.toContain('(interrupted)')
+  })
+
+  test('an interrupted turn is marked', async ($, on) => {
+    await streamThread($, on)
+    await $.turn.complete(completed('aborted'))
+    expect(await drawAnchored($)).toContain('(interrupted)')
+  })
+
+  test('rows of other turns are untouched', async ($, on) => {
+    world(on, undefined)
+    const prompt = await $.session.append(row('prompt', 'u-hello', 'hello'))
+    const user = JSON.stringify(
+      await $.ui.render(
+        render('UserMessage', prompt.uuid ?? 'u-hello', { text: 'hello', origin: { kind: 'composer' }, isExpanded: false }),
+      ),
+    )
+    expect(user).toContain('reply')
+    expect(user).not.toContain('none')
   })
 })

@@ -1,6 +1,7 @@
 import type { Register } from 'claude-code'
 import { locateAnchor } from './anchor'
-import { buildPrompt, createThreads } from './threads'
+import { buildPrompt, claimOf, createThreads } from './threads'
+import { anchorView, hidden } from './view'
 
 export const register: Register = (on) => {
   // Assistant block id → markdown, in render order. Module state: lost on a mod reload (v1).
@@ -53,9 +54,51 @@ export const register: Register = (on) => {
     return {}
   })
 
+  on('turn.start', async ($, e, next) => {
+    threads.startTurn(e.text, e.turnId)
+    return next(e)
+  })
+
+  on('session.append', async ($, e, next) => {
+    threads.claim(claimOf(e))
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    threads.complete(e.turnId, e.reason)
+    $.ui.invalidate('ui.render')
+    return next(e)
+  })
+
+  // The thread's own rows are drawn inline in the anchored block, not at the bottom.
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    if (threads.ownerOf(e.requestId) === undefined) return next(e)
+    return hidden($.ui.resolve(e))
+  })
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    if (threads.ownerOf(e.requestId) === undefined) return next(e)
+    return hidden($.ui.resolve(e))
+  })
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    if (threads.ownerOf(e.requestId) === undefined) return next(e)
+    return hidden($.ui.resolve(e))
+  })
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    const ids = e.props.calls.map(call => call.tool_use_id)
+    const isOwned = ids.length > 0 && ids.every(id => id !== undefined && threads.ownerOf(id) !== undefined)
+    return isOwned ? hidden($.ui.resolve(e)) : next(e)
+  })
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    const owner = threads.ownerOf(e.requestId)
+    if (owner !== undefined) {
+      // The thread's reply: keep its text for the anchor to draw, and redraw when it grew.
+      if (threads.setReply(owner, e.requestId, e.props.text)) $.ui.invalidate('ui.render')
+      return hidden($.ui.resolve(e))
+    }
     // A summary block shares its reply's id but holds only a summary of the text.
     if (e.props.isSummary !== true) blocks.set(e.requestId, e.props.text)
-    return next(e)
+    const here = threads.all().filter(t => t.anchor.messageId === e.requestId)
+    if (here.length === 0) return next(e)
+    return anchorView($.ui.resolve(e), e.props.text, here)
   })
 }
