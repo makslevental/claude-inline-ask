@@ -42,7 +42,8 @@ Claude answered in context and later turns can refer back to it.
 
 ## Requirements
 
-* Claude Code 2.1.287 or later (mods).
+* A Claude Code with mods (2.1.287 or later) and `$.ui.selection`. Developed and tested on 2.1.293. On a
+  build that lacks the selection API, `/ask` shows a toast asking you to update instead of failing.
 * Fullscreen rendering (`/fullscreen`), because the mod reads Claude Code's own transcript selection.
 
 ## Install

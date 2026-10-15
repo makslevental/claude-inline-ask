@@ -24,7 +24,14 @@ export const register: Register = (on) => {
       $.ui.toast('Usage: /ask <question> (select text in a reply first)')
       return {}
     }
-    const selection = await $.ui.selection()
+    // A Claude Code too old to have `$.ui.selection` (or one that refuses it) rejects here.
+    let selection
+    try {
+      selection = await $.ui.selection()
+    } catch {
+      $.ui.toast('This needs a recent Claude Code with fullscreen mode (tested on 2.1.293): update it, then /fullscreen')
+      return {}
+    }
     if (selection === undefined) {
       $.ui.toast('Select text in a reply first (needs fullscreen: /fullscreen)')
       return {}

@@ -42,6 +42,17 @@ describe('/ask', () => {
     expect(w.submitted).toEqual([])
   })
 
+  test('a Claude Code without a working selection API gets a clear toast', async ($, on) => {
+    const w = world(on, () => {
+      throw new TypeError('$.ui.selection is not a function')
+    })
+    await $.command.run(ask('why?'))
+    await w.clock.advance(200)
+    expect(w.toasts.length).toBe(1)
+    expect(w.toasts[0]).toContain('recent Claude Code')
+    expect(w.submitted).toEqual([])
+  })
+
   test('no selection asks to select text first', async ($, on) => {
     const w = world(on, undefined)
     await $.command.run(ask('why?'))
