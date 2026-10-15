@@ -1,0 +1,4 @@
+{
+  "description": "inline-ask hooks module",
+  "modules": ["./register.js"]
+}
