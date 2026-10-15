@@ -82,9 +82,13 @@ describe('locateAnchor', () => {
     const b = blocks({ m1: 'Para A\n\n***\n\nPara B' })
     expect(locateAnchor({ text: 'Para A\n\nPara B' }, b)).toEqual({ messageId: 'm1', paragraphIndex: 2 })
   })
-  test('an unknown requestId falls back to newest first', () => {
+  test('an unknown requestId returns undefined', () => {
     const b = blocks({ m1: 'the same sentence', m2: 'the same sentence' })
-    expect(locateAnchor({ text: 'same sentence', requestId: 'zzz' }, b)).toEqual({ messageId: 'm2', paragraphIndex: 0 })
+    expect(locateAnchor({ text: 'same sentence', requestId: 'zzz' }, b)).toBeUndefined()
+  })
+  test('a selection whose own row misses does not fall back to older blocks', () => {
+    const b = blocks({ m1: 'alpha sentence', m2: 'beta sentence' })
+    expect(locateAnchor({ text: 'alpha sentence', requestId: 'm2' }, b)).toBeUndefined()
   })
   test('returns undefined for a selection of only stripped characters', () => {
     expect(locateAnchor({ text: '**' }, blocks({ m1: 'present' }))).toBeUndefined()

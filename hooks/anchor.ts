@@ -63,17 +63,20 @@ export function normalize(markdown: string): string {
 }
 
 /**
- * Finds the paragraph holding the end of the selection. The selection's own row is searched
- * first, then the other blocks newest first (`blocks` iterates in render order).
+ * Finds the paragraph holding the end of the selection. A selection that names its row (`requestId`)
+ * is searched in that block alone: no fallback to other blocks, which may no longer be drawn; an
+ * unknown row gives undefined. Only a selection spanning rows (no `requestId`) searches every block,
+ * newest first (`blocks` iterates in render order).
  */
 export function locateAnchor(selection: SelectionLike, blocks: ReadonlyMap<string, string>): Anchor | undefined {
   const needle = normalize(selection.text)
   if (needle === '') return undefined
-  const newestFirst = [...blocks.keys()].reverse()
   const order =
-    selection.requestId !== undefined && blocks.has(selection.requestId)
-      ? [selection.requestId, ...newestFirst.filter(id => id !== selection.requestId)]
-      : newestFirst
+    selection.requestId !== undefined
+      ? blocks.has(selection.requestId)
+        ? [selection.requestId]
+        : []
+      : [...blocks.keys()].reverse()
   for (const messageId of order) {
     const kept = splitParagraphs(blocks.get(messageId) ?? '')
       .map((paragraph, index) => ({ text: normalize(paragraph), index }))
