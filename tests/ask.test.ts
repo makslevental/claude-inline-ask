@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 type Selection = { text: string; requestId?: string } | undefined
 
 // Engine stand-ins beneath the plugin; returns what the plugin sent to toast and prompt.submit.
-function world(on: On, selection: Selection) {
+function world(on: On, selection: Selection, dropReason?: string) {
   const clock = mock.clock(on)
   const toasts: string[] = []
   const submitted: string[] = []
@@ -15,7 +15,7 @@ function world(on: On, selection: Selection) {
   })
   on('prompt.submit', (_$, e) => {
     submitted.push(e.text)
-    return { text: e.text }
+    return dropReason === undefined ? { text: e.text } : { drop: dropReason }
   })
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['reply'] }) as never)
   return { clock, toasts, submitted }
@@ -61,8 +61,22 @@ describe('/ask', () => {
       props: { text: 'First paragraph.\n\nSecond paragraph here.', isFirstOfReply: true },
     } as never)
     await $.command.run(ask('why?'))
+    expect(w.submitted).toEqual([]) // the engine rejects a submit inside the command hook, so nothing yet
     await w.clock.advance(200)
     expect(w.toasts).toEqual([])
     expect(w.submitted).toEqual(['About this part of your earlier reply:\n> Second paragraph\n\nwhy?'])
+  })
+
+  test('a dropped submit toasts the reason', async ($, on) => {
+    const w = world(on, { text: 'Second paragraph', requestId: 'm1' }, 'blocked by a policy')
+    await $.ui.render({
+      component: 'AssistantMessage',
+      requestId: 'm1',
+      surface: 'terminal',
+      props: { text: 'First paragraph.\n\nSecond paragraph here.', isFirstOfReply: true },
+    } as never)
+    await $.command.run(ask('why?'))
+    await w.clock.advance(200)
+    expect(w.toasts).toEqual(['Could not send the question: blocked by a policy'])
   })
 })

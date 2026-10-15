@@ -38,16 +38,24 @@ export const register: Register = (on) => {
     // The engine rejects a submit made inside this hook (it would wait on the turn the hook holds),
     // so submit from a timer. Not awaited: it resolves when the turn starts, and waits while Claude is busy.
     $.clock.after(200, () => {
-      $.prompt.submit({ text, asUser: true }).catch(() => {
+      const fail = (reason: string) => {
         threads.remove(thread)
-        $.ui.toast('Could not send the question')
-      })
+        $.ui.toast(reason)
+      }
+      $.prompt.submit({ text, asUser: true }).then(
+        // Another plugin may drop the prompt: the call then resolves with `drop` and no turn starts.
+        result => {
+          if (result.drop !== undefined) fail(`Could not send the question: ${result.drop}`)
+        },
+        () => fail('Could not send the question'),
+      )
     })
     return {}
   })
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
-    blocks.set(e.requestId, e.props.text)
+    // A summary block shares its reply's id but holds only a summary of the text.
+    if (e.props.isSummary !== true) blocks.set(e.requestId, e.props.text)
     return next(e)
   })
 }
