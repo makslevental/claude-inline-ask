@@ -7,6 +7,39 @@ of at the bottom of the conversation.
 `/ask` sends a normal turn: same conversation, same model, full context, recorded in history. Only where
 it is drawn changes. `ctrl+o` shows the transcript as it really is.
 
+## Example
+
+You ask for three short paragraphs about pulsars. The second one mentions "LGM-1" and you want to know
+what that is. Select the sentence, type `/ask what does this mean`, and press Enter (the drawing below is a text
+sketch of the result):
+
+```text
+❯ in three short paragraphs tell me about pulsars
+
+● Pulsars are rapidly rotating neutron stars, the collapsed cores left behind when massive stars
+  explode as supernovae. They pack more than a sun's worth of mass into a sphere only about 20
+  kilometers across.
+
+  The first pulsar was found in 1967 by Jocelyn Bell Burnell. The signal was so regular that it was
+  briefly nicknamed "LGM-1," for "little green men."
+
+  ▎ what does this mean
+  ▎ It means the signal was so precise and regular that the researchers half-seriously wondered
+  ▎ whether it could come from an intelligent source, such as an alien civilization. "LGM" stands
+  ▎ for "little green men," a popular way of referring to imagined extraterrestrials.
+
+    ▎ why a joke and not a real hypothesis?
+    ▎ Because they quickly found more pulsars in other parts of the sky, which made an alien
+    ▎ explanation very unlikely.
+
+  Millisecond pulsars keep time so precisely that they rival atomic clocks, which makes them useful
+  for testing general relativity and detecting gravitational waves.
+```
+
+The thread sits right under the paragraph you selected from, not at the bottom. The second thread is a
+follow-up on the first answer: it is indented one level deeper. The conversation itself is normal;
+Claude answered in context and later turns can refer back to it.
+
 ## Requirements
 
 * Claude Code 2.1.287 or later (mods).
@@ -14,11 +47,24 @@ it is drawn changes. `ctrl+o` shows the transcript as it really is.
 
 ## Install
 
-Try it for one session:
+From inside Claude Code in a terminal, install it from this repository:
+
+```text
+/plugin install inline-ask --marketplace makslevental/claude-inline-ask
+```
+
+Answer `y` to add the marketplace, then pick a scope. With the user scope the mod loads in every later
+session; it is active in the current one straight away. This command works in a terminal session, not
+in the desktop app's Code tab.
+
+To try it for one session without installing, clone the repository and point Claude Code at it:
 
 ```sh
-claude --plugin-dir /path/to/claude-inline-ask
+git clone git@github.com:makslevental/claude-inline-ask.git
+claude --plugin-dir ./claude-inline-ask
 ```
+
+Then switch to fullscreen with `/fullscreen` if you are not already in it, and see **Use** below.
 
 ## Use
 

@@ -1,0 +1,6 @@
+{
+  "name": "inline-ask",
+  "description": "Claude Code mods by makslevental: ask about a highlighted passage of a reply and see the answer inline",
+  "owner": { "name": "makslevental" },
+  "plugins": [{ "name": "inline-ask", "source": "./" }]
+}
