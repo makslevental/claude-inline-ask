@@ -11,9 +11,22 @@ describe('splitParagraphs', () => {
     const md = 'Intro\n\n```ts\nconst a = 1\n\nconst b = 2\n```\n\nOutro'
     expect(splitParagraphs(md)).toEqual(['Intro', '```ts\nconst a = 1\n\nconst b = 2\n```', 'Outro'])
   })
+  test('inline triple backticks do not open a fence', () => {
+    expect(splitParagraphs('```x```\n\nA\n\nB')).toEqual(['```x```', 'A', 'B'])
+  })
+  test('a longer fence is not closed by a shorter one', () => {
+    const md = '````md\n```ts\nx\n```\n````\n\nafter'
+    expect(splitParagraphs(md)).toEqual(['````md\n```ts\nx\n```\n````', 'after'])
+  })
+  test('an unterminated fence runs to the end', () => {
+    expect(splitParagraphs('Intro\n\n```ts\nconst a = 1\n\nstill code')).toEqual(['Intro', '```ts\nconst a = 1\n\nstill code'])
+  })
 })
 
 describe('normalize', () => {
+  test('strips underscore emphasis', () => {
+    expect(normalize('_emphasis_ and __bold__')).toBe('emphasis and bold')
+  })
   test('strips emphasis, code ticks, links, headings and list markers', () => {
     expect(normalize('## A **bold** and `code` and [a link](http://x.y)')).toBe('A bold and code and a link')
     expect(normalize('- item one\n- item two')).toBe('item one item two')
@@ -64,5 +77,16 @@ describe('locateAnchor', () => {
   })
   test('returns undefined for an empty selection', () => {
     expect(locateAnchor({ text: '  \n ' }, blocks({ m1: 'present' }))).toBeUndefined()
+  })
+  test('skips paragraphs that normalise to empty', () => {
+    const b = blocks({ m1: 'Para A\n\n***\n\nPara B' })
+    expect(locateAnchor({ text: 'Para A\n\nPara B' }, b)).toEqual({ messageId: 'm1', paragraphIndex: 2 })
+  })
+  test('an unknown requestId falls back to newest first', () => {
+    const b = blocks({ m1: 'the same sentence', m2: 'the same sentence' })
+    expect(locateAnchor({ text: 'same sentence', requestId: 'zzz' }, b)).toEqual({ messageId: 'm2', paragraphIndex: 0 })
+  })
+  test('returns undefined for a selection of only stripped characters', () => {
+    expect(locateAnchor({ text: '**' }, blocks({ m1: 'present' }))).toBeUndefined()
   })
 })
