@@ -79,20 +79,43 @@ export function createThreads() {
       return thread
     },
 
-    /** Binds a stored row: the user message by its text (it is stored before the turn starts), the rest to the streaming thread. */
-    claim(claim: RowClaim): void {
+    /**
+     * Binds a stored row: the user message by its text (it is stored before the turn starts), the rest to the
+     * streaming thread. A prompt row no pending thread takes ends the streaming thread's claim: it was delivered
+     * into or queued after that turn, so what follows belongs to the normal transcript. True when anything drawn changed.
+     */
+    claim(claim: RowClaim): boolean {
       if (claim.userId !== undefined) {
+        let changed = false
         for (const stale of threads) {
-          if (stale.status === 'pending' && stale.userMessageId !== undefined && stale.submittedText === claim.userText) stale.status = 'interrupted'
+          if (stale.status === 'pending' && stale.userMessageId !== undefined && stale.submittedText === claim.userText) {
+            stale.status = 'interrupted'
+            changed = true
+          }
         }
         const thread = threads.find(t => t.status === 'pending' && t.userMessageId === undefined && t.submittedText === claim.userText)
-        if (thread !== undefined) thread.userMessageId = claim.userId
-        return
+        if (thread !== undefined) {
+          thread.userMessageId = claim.userId
+          return true
+        }
+        const current = streaming()
+        if (current !== undefined) current.status = 'done'
+        return changed
       }
       const thread = streaming()
-      if (thread === undefined) return
-      if (claim.replyId !== undefined && !thread.replyBlocks.has(claim.replyId)) thread.replyBlocks.set(claim.replyId, '')
-      for (const id of claim.toolIds) thread.toolCallIds.add(id)
+      if (thread === undefined) return false
+      let changed = false
+      if (claim.replyId !== undefined && !thread.replyBlocks.has(claim.replyId)) {
+        thread.replyBlocks.set(claim.replyId, '')
+        changed = true
+      }
+      for (const id of claim.toolIds) {
+        if (!thread.toolCallIds.has(id)) {
+          thread.toolCallIds.add(id)
+          changed = true
+        }
+      }
+      return changed
     },
 
     /** The turn ended: 'answer' means done; any other reason ('aborted', 'error', 'refusal') means interrupted. */

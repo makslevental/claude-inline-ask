@@ -4,11 +4,17 @@ import type { Engine } from 'claude-code/testing'
 
 type Selection = { text: string; requestId?: string } | undefined
 
-// Engine stand-ins beneath the plugin; returns what the plugin sent to toast and prompt.submit.
+// Engine stand-ins beneath the plugin; returns what the plugin sent to toast and prompt.submit,
+// and how many times it asked for a redraw.
 function world(on: On, selection: Selection, dropReason?: string) {
   const clock = mock.clock(on)
   const toasts: string[] = []
   const submitted: string[] = []
+  let invalidations = 0
+  on('ui.invalidate', () => {
+    invalidations += 1
+    return { value: undefined }
+  })
   on('ui.selection', () => ({ value: selection }))
   on('ui.toast', (_$, e) => {
     toasts.push(e.text)
@@ -19,7 +25,7 @@ function world(on: On, selection: Selection, dropReason?: string) {
     return dropReason === undefined ? { text: e.text } : { drop: dropReason }
   })
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['reply'] }) as never)
-  return { clock, toasts, submitted }
+  return { clock, toasts, submitted, invalidations: () => invalidations }
 }
 
 const ask = (args: string) =>
@@ -88,6 +94,21 @@ const PROMPT = 'About this part of your earlier reply:\n> Second paragraph\n\nwh
 const render = (component: string, requestId: string, props: object) =>
   ({ component, requestId, surface: 'terminal', props }) as never
 
+const toolRow = (uuid: string, id: string) =>
+  ({
+    message: { type: 'assistant', role: 'assistant', content: [{ type: 'tool_use', id, name: 'Read', input: {} }] },
+    door: 'response',
+    origin: { kind: 'model', model: 'claude' },
+    uuid,
+  }) as never
+
+const toolGroup = (id: string) =>
+  render('ToolGroup', `collapsed-${id}`, {
+    calls: [{ tool_use_id: id, tool: 'Read', input: {}, isRunning: false, isErrored: false, isInterrupted: false }],
+    isActive: false,
+    isExpanded: false,
+  })
+
 const row = (door: 'prompt' | 'response', uuid: string, text: string) =>
   (door === 'prompt'
     ? {
@@ -109,12 +130,17 @@ const completed = (reason: 'answer' | 'aborted') =>
 const drawAnchored = async ($: Engine) =>
   JSON.stringify(await $.ui.render(render('AssistantMessage', 'm1', { text: ANCHORED, isFirstOfReply: true })))
 
-// The engine beneath a turn, then /ask run up to its streamed reply (steps shared by the lifecycle tests).
-async function streamThread($: Engine, on: On) {
+// The engine beneath a turn, with the anchored reply's paragraph selected.
+function turnWorld(on: On) {
   const w = world(on, { text: 'Second paragraph', requestId: 'm1' })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
-  on('ui.invalidate', () => ({ value: undefined }))
+  return w
+}
+
+// /ask run up to its streamed reply (steps shared by the lifecycle tests).
+async function streamThread($: Engine, on: On) {
+  const w = turnWorld(on)
 
   await $.ui.render(render('AssistantMessage', 'm1', { text: ANCHORED, isFirstOfReply: true }))
   await $.command.run(ask('why?'))
@@ -146,6 +172,7 @@ async function streamThread($: Engine, on: On) {
   expect(anchored).toContain('The answer.')
   expect(anchored.indexOf('Second paragraph here.')).toBeLessThan(anchored.indexOf('why?'))
   expect(anchored.indexOf('why?')).toBeLessThan(anchored.indexOf('Third.'))
+  return { replyId: response.uuid ?? 'u-response' }
 }
 
 describe('/ask thread', () => {
@@ -173,5 +200,52 @@ describe('/ask thread', () => {
     )
     expect(user).toContain('reply')
     expect(user).not.toContain('none')
+  })
+
+  test('the transcript is redrawn when the thread is created, starts and claims a row', async ($, on) => {
+    const w = turnWorld(on)
+    await $.ui.render(render('AssistantMessage', 'm1', { text: ANCHORED, isFirstOfReply: true }))
+    await $.command.run(ask('why?'))
+    const created = w.invalidations()
+    expect(created).toBeGreaterThanOrEqual(1)
+    await w.clock.advance(200)
+    await $.session.append(row('prompt', 'u-prompt', PROMPT))
+    const bound = w.invalidations()
+    expect(bound).toBeGreaterThan(created)
+    await $.turn.start({ text: PROMPT, turnId: 't1' })
+    const started = w.invalidations()
+    expect(started).toBeGreaterThan(bound)
+    await $.session.append(row('response', 'u-response', 'x'))
+    expect(w.invalidations()).toBeGreaterThan(started)
+  })
+
+  test('a summary block is never drawn with the thread', async ($, on) => {
+    const { replyId } = await streamThread($, on)
+    const summary = JSON.stringify(
+      await $.ui.render(render('AssistantMessage', 'm1', { text: 'A summary.', isFirstOfReply: true, isSummary: true })),
+    )
+    expect(summary).not.toContain('why?')
+    // A summary of the thread's own reply is hidden and does not replace the reply's text.
+    const replySummary = JSON.stringify(
+      await $.ui.render(render('AssistantMessage', replyId, { text: 'Short.', isFirstOfReply: true, isSummary: true })),
+    )
+    expect(replySummary).toContain('"display":"none"')
+    const anchored = await drawAnchored($)
+    expect(anchored).toContain('why?')
+    expect(anchored).toContain('The answer.')
+    expect(anchored).not.toContain('Short.')
+  })
+
+  test("the thread's tool rows are hidden, other tool groups are not", async ($, on) => {
+    await streamThread($, on)
+    await $.session.append(toolRow('u-tool', 'tool-1'))
+    const use = JSON.stringify(await $.ui.render(render('ToolUse', 'tool-1', { tool: 'Read', input: {} })))
+    expect(use).toContain('"display":"none"')
+    const result = JSON.stringify(await $.ui.render(render('ToolResult', 'tool-1', { tool: 'Read', input: {} })))
+    expect(result).toContain('"display":"none"')
+    expect(JSON.stringify(await $.ui.render(toolGroup('tool-1')))).toContain('"display":"none"')
+    const other = JSON.stringify(await $.ui.render(toolGroup('other')))
+    expect(other).toContain('reply')
+    expect(other).not.toContain('none')
   })
 })
