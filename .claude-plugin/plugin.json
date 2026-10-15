@@ -1,5 +1,9 @@
 {
   "name": "inline-ask",
   "version": "0.1.0",
-  "description": "Ask about a highlighted passage of a reply and see the answer inline under that paragraph"
+  "description": "Ask about a highlighted passage of a reply and see the answer inline under that paragraph",
+  "author": {
+    "name": "Maksim Levental",
+    "email": "maksim.levental@gmail.com"
+  }
 }
