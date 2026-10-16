@@ -1,4 +1,5 @@
 import { splitParagraphs } from './anchor'
+import { echoOf } from './threads'
 import type { Thread } from './threads'
 
 // The element table `$.ui.resolve(e)` returns; only these three are used.
@@ -15,7 +16,10 @@ export function threadView(els: Els, thread: Thread, depth = 0) {
   const answer = [...thread.replyBlocks.values()].filter(text => text !== '').join('\n\n')
   const toolCount = thread.toolCallIds.size
   const children = [
-    <Text dimColor>{thread.question}</Text>,
+    // A blank line sets the echo apart from the answer.
+    <Box marginBottom={1}>
+      <Text>{echoOf(thread)}</Text>
+    </Box>,
     ...(toolCount > 0 ? [<Text dimColor>{`⎿ ${toolCount} tool call${toolCount === 1 ? '' : 's'}`}</Text>] : []),
     answer !== '' ? <Markdown text={answer} /> : <Text dimColor>…</Text>,
     ...(thread.status === 'interrupted' ? [<Text dimColor>(interrupted)</Text>] : []),
@@ -52,11 +56,14 @@ export function orderedWithDepth(threads: readonly Thread[]): { thread: Thread; 
   return ordered
 }
 
-/** An assistant block with each thread inserted after its anchored paragraph. */
-export function anchorView(els: Els, markdown: string, threads: readonly Thread[]) {
+/**
+ * An assistant block with each thread inserted after its anchored paragraph, and `before` (threads hosted
+ * for a row above, such as a diff) ahead of its first.
+ */
+export function anchorView(els: Els, markdown: string, threads: readonly Thread[], before: readonly Thread[] = []) {
   const { Box, Markdown } = els
   const paragraphs = splitParagraphs(markdown)
-  const children: unknown[] = []
+  const children: unknown[] = orderedWithDepth(before).map(({ thread, depth }) => threadView(els, thread, depth))
   let start = 0
   const anchoredAt = [...new Set(threads.map(t => t.anchor.paragraphIndex))].sort((x, y) => x - y)
   for (const index of anchoredAt) {
@@ -69,4 +76,16 @@ export function anchorView(els: Els, markdown: string, threads: readonly Thread[
   }
   if (start < paragraphs.length) children.push(<Markdown text={paragraphs.slice(start).join('\n\n')} />)
   return <Box flexDirection="column">{children}</Box>
+}
+
+/** A row drawn whole (a tool's result, such as a diff), with its threads beneath it. */
+export function belowView(els: Els, row: unknown, threads: readonly Thread[]) {
+  const { Box } = els
+  const children = orderedWithDepth(threads).map(({ thread, depth }) => threadView(els, thread, depth))
+  return (
+    <Box flexDirection="column">
+      {row}
+      {children}
+    </Box>
+  )
 }

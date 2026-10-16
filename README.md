@@ -23,12 +23,14 @@ sketch of the result):
   The first pulsar was found in 1967 by Jocelyn Bell Burnell. The signal was so regular that it was
   briefly nicknamed "LGM-1," for "little green men."
 
-  ▎ what does this mean
+  ▎ • what does this mean: “The signal was so re…”
+  ▎
   ▎ It means the signal was so precise and regular that the researchers half-seriously wondered
   ▎ whether it could come from an intelligent source, such as an alien civilization. "LGM" stands
   ▎ for "little green men," a popular way of referring to imagined extraterrestrials.
 
-    ▎ why a joke and not a real hypothesis?
+    ▎ • why a joke and not a real hypothesis?: “half-seriously wonde…”
+    ▎
     ▎ Because they quickly found more pulsars in other parts of the sky, which made an alien
     ▎ explanation very unlikely.
 
@@ -88,11 +90,16 @@ the mod when its files change.
 1. Select text in one of Claude's replies with the mouse.
 2. Type `/ask what do you mean by this?` and press Enter. The highlight disappears as you type; the
    mod still sees it.
-3. The question appears under the paragraph you selected from, and the answer streams in beneath it.
+3. The question appears under the paragraph you selected from, followed by the first 20 characters of
+   your selection, and the answer streams in beneath it.
    Tool calls the answer makes are summarised as `⎿ N tool calls`. Press Escape to interrupt; the thread
    shows `(interrupted)` and keeps the partial answer.
 4. To follow up on an answer, select text inside the thread and `/ask` again. The follow-up appears
    below the answer you selected from, indented one level deeper.
+5. A selection in a tool's output, such as an Edit's diff or a command's output, works the same way, and
+   the question names the file the edit touched. The thread appears at the top of Claude's next text after
+   the output, so that its answer can be selected for a follow-up; with no such text in that turn, it goes
+   directly under the output, where a follow-up is not possible.
 
 Nothing selected, or no question, shows a short toast and sends nothing.
 
@@ -101,7 +108,7 @@ Nothing selected, or no question, shows a short toast and sends nothing.
 * Claude Code draws its own `› Prompt from the inline-ask plugin` block at the bottom for any prompt a
   plugin submits. The mod cannot hide it.
 * A thread goes after the whole paragraph, list or code block that contains the selection, not at the
-  exact spot.
+  exact spot. On a tool's output (a diff), it goes after the whole output, or further down (see **Use**).
 * After `/resume`, or after the mod reloads, existing threads are shown where they really are, at the
   bottom.
 * Not available in non-fullscreen mode or `claude -p`.

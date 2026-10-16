@@ -6,6 +6,8 @@ export type ThreadStatus = 'pending' | 'streaming' | 'done' | 'interrupted'
 export type Thread = {
   anchor: Anchor
   question: string
+  /** The selected text the question is about, as the person saw it. */
+  selectedText: string
   submittedText: string
   status: ThreadStatus
   turnId?: string
@@ -23,13 +25,30 @@ export type RowClaim = { userId?: string; userText?: string; replyId?: string; t
 type Block = { type?: string; id?: string; text?: string }
 type AppendedRow = { door: string; uuid: string; agentId?: string; message: { content: unknown } }
 
-export function buildPrompt(selectedText: string, question: string): string {
+/** `source` names what the selection came from (`toolSource`); left out, an earlier reply. */
+export function buildPrompt(selectedText: string, question: string, source = 'your earlier reply'): string {
   const quoted = selectedText
     .trim()
     .split('\n')
     .map(line => `> ${line}`)
     .join('\n')
-  return `About this part of your earlier reply:\n${quoted}\n\n${question}`
+  return `About this part of ${source}:\n${quoted}\n\n${question}`
+}
+
+const ECHO_QUOTE_LENGTH = 20
+
+/** The line a thread's question is drawn as: the question, then the selection it is about, cut to ECHO_QUOTE_LENGTH. */
+export function echoOf(thread: Thread): string {
+  const selected = [...thread.selectedText.replace(/\s+/g, ' ').trim()]
+  if (selected.length === 0) return `• ${thread.question}`
+  const quote = selected.length > ECHO_QUOTE_LENGTH ? `${selected.slice(0, ECHO_QUOTE_LENGTH).join('').trimEnd()}…` : selected.join('')
+  return `• ${thread.question}: “${quote}”`
+}
+
+/** Names a tool row for the prompt: by the file it touched (Edit, Write) where its output says, else by the tool. */
+export function toolSource(tool: string, output: unknown): string {
+  const filePath = typeof output === 'object' && output !== null ? (output as { filePath?: unknown }).filePath : undefined
+  return typeof filePath === 'string' ? `your ${tool} of ${filePath}` : `your ${tool} call's output`
 }
 
 /** Reads a `session.append` row into the ids and text a thread needs. Subagent rows claim nothing. */
@@ -54,10 +73,11 @@ export function createThreads() {
   return {
     all: (): readonly Thread[] => threads,
 
-    add(anchor: Anchor, question: string, submittedText: string, parent?: Thread): Thread {
+    add(anchor: Anchor, question: string, submittedText: string, parent?: Thread, selectedText = ''): Thread {
       const thread: Thread = {
         anchor,
         question,
+        selectedText,
         submittedText: submittedText.trim(),
         status: 'pending',
         replyBlocks: new Map(),
@@ -136,13 +156,17 @@ export function createThreads() {
       return true
     },
 
-    /** The newest thread whose question or answer holds the selected text: a follow-up anchors where it does. */
-    findByText(selectedText: string): Thread | undefined {
+    /**
+     * The newest thread whose question (as drawn, `echoOf`) or answer holds the selected text: a follow-up anchors where it does.
+     * `messageId` narrows the search to the threads drawn in that row.
+     */
+    findByText(selectedText: string, messageId?: string): Thread | undefined {
       const needle = normalize(selectedText)
       if (needle === '') return undefined
       for (let i = threads.length - 1; i >= 0; i--) {
         const thread = threads[i]!
-        const text = normalize(thread.question + ' ' + [...thread.replyBlocks.values()].join(' '))
+        if (messageId !== undefined && thread.anchor.messageId !== messageId) continue
+        const text = normalize(echoOf(thread) + ' ' + [...thread.replyBlocks.values()].join(' '))
         if (text.includes(needle)) return thread
       }
       return undefined

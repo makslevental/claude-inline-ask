@@ -180,7 +180,8 @@ async function streamThread($: Engine, on: On, selection?: () => Selection) {
   expect(reply).toContain('"display":"none"')
 
   const anchored = await drawAnchored($)
-  expect(anchored).toContain('why?')
+  expect(anchored).toContain('• why?: “Second paragraph”')
+  expect(anchored).toMatch(/marginBottom\W+1\b/) // a blank line after the echo
   expect(anchored).toContain('The answer.')
   expect(anchored.indexOf('Second paragraph here.')).toBeLessThan(anchored.indexOf('why?'))
   expect(anchored.indexOf('why?')).toBeLessThan(anchored.indexOf('Third.'))
@@ -313,5 +314,110 @@ describe('/ask thread', () => {
     await w.clock.advance(200)
     expect(w.toasts).toEqual(["Couldn't find the selection in one of Claude's replies"])
     expect(w.submitted).toEqual([PROMPT])
+  })
+})
+
+const DIFF_ID = 'toolu-edit'
+const DIFF_PROMPT = 'About this part of your Edit of /src/a.ts:\n> + const x = 1\n\nwhy?'
+const PLAIN = JSON.stringify({ type: 'Text', props: {}, children: ['reply'] })
+
+const drawDiff = async ($: Engine) =>
+  JSON.stringify(
+    await $.ui.render(
+      render('ToolResult', DIFF_ID, {
+        tool_use_id: DIFF_ID,
+        tool: 'Edit',
+        output: { filePath: '/src/a.ts', structuredPatch: [] },
+        isErrored: false,
+      }),
+    ),
+  )
+
+// The reply block Claude wrote after the edit, in the same turn.
+const drawAfter = async ($: Engine) =>
+  JSON.stringify(await $.ui.render(render('AssistantMessage', 'm-after', { text: 'Done editing.', isFirstOfReply: false })))
+
+// /ask on the diff, answered and complete.
+async function answerDiff($: Engine, w: ReturnType<typeof world>) {
+  await $.command.run(ask('why?'))
+  await w.clock.advance(200)
+  expect(w.toasts).toEqual([])
+  expect(w.submitted).toEqual([DIFF_PROMPT])
+  await $.session.append(row('prompt', 'u-prompt', DIFF_PROMPT))
+  await $.turn.start({ text: DIFF_PROMPT, turnId: 't1' })
+  const first = await $.session.append(row('response', 'u-response', 'x'))
+  await $.ui.render(render('AssistantMessage', first.uuid ?? 'u-response', { text: 'Because x is needed.', isFirstOfReply: true }))
+  await $.turn.complete(completed('answer'))
+}
+
+describe('/ask on a tool row', () => {
+  test("a diff's thread is drawn atop the reply block after it, where a follow-up nests in it", async ($, on) => {
+    let selection: Selection = { text: '+ const x = 1', requestId: DIFF_ID }
+    const w = turnWorld(on, () => selection)
+    await drawDiff($)
+    await drawAfter($)
+    await answerDiff($, w)
+
+    // Not in the tool row, whose plugin-drawn text the engine cannot select.
+    expect(await drawDiff($)).toBe(PLAIN)
+    const after = await drawAfter($)
+    expect(after.indexOf('why?')).toBeGreaterThan(-1)
+    expect(after.indexOf('why?')).toBeLessThan(after.indexOf('Because x is needed.'))
+    expect(after.indexOf('Because x is needed.')).toBeLessThan(after.indexOf('Done editing.'))
+    expect(after).not.toMatch(/marginLeft\W+2\b/)
+
+    // The engine reports the hosting block for a selection inside the thread.
+    selection = { text: 'x is needed', requestId: 'm-after' }
+    await $.command.run(ask('and then?'))
+    await w.clock.advance(200)
+    expect(w.toasts).toEqual([])
+    const followUp = w.submitted[1]!
+    expect(followUp).toBe('About this part of your earlier reply:\n> x is needed\n\nand then?')
+
+    await $.session.append(row('prompt', 'u-prompt-2', followUp))
+    await $.turn.start({ text: followUp, turnId: 't2' })
+    const second = await $.session.append(row('response', 'u-response-2', 'x'))
+    await $.ui.render(render('AssistantMessage', second.uuid ?? 'u-response-2', { text: 'Then it runs.', isFirstOfReply: true }))
+
+    const nested = await drawAfter($)
+    expect(nested.indexOf('Because x is needed.')).toBeLessThan(nested.indexOf('and then?'))
+    expect(nested.indexOf('and then?')).toBeLessThan(nested.indexOf('Then it runs.'))
+    expect(nested.indexOf('Then it runs.')).toBeLessThan(nested.indexOf('Done editing.'))
+    expect(nested).toMatch(/marginLeft\W+2\b/)
+  })
+
+  test('with no reply block after it in its turn, the thread is drawn beneath the diff', async ($, on) => {
+    const w = turnWorld(on, { text: '+ const x = 1', requestId: DIFF_ID })
+    await drawDiff($)
+    await $.ui.render(render('UserMessage', 'u-next', { text: 'next', origin: { kind: 'composer' }, isExpanded: false }))
+    await $.ui.render(render('AssistantMessage', 'm-next', { text: 'Next turn.', isFirstOfReply: true }))
+    await answerDiff($, w)
+
+    const diff = await drawDiff($)
+    expect(diff.indexOf('reply')).toBeGreaterThan(-1)
+    expect(diff.indexOf('reply')).toBeLessThan(diff.indexOf('why?'))
+    expect(diff.indexOf('why?')).toBeLessThan(diff.indexOf('Because x is needed.'))
+    const next = JSON.stringify(await $.ui.render(render('AssistantMessage', 'm-next', { text: 'Next turn.', isFirstOfReply: true })))
+    expect(next).not.toContain('why?')
+  })
+
+  test('a reply block drawn later takes the thread over and redraws', async ($, on) => {
+    const w = turnWorld(on, { text: '+ const x = 1', requestId: DIFF_ID })
+    await drawDiff($)
+    await answerDiff($, w)
+    expect(await drawDiff($)).toContain('why?')
+
+    const before = w.invalidations()
+    expect(await drawAfter($)).toContain('why?')
+    expect(w.invalidations()).toBeGreaterThan(before)
+    expect(await drawDiff($)).toBe(PLAIN)
+  })
+
+  test('a selection naming a tool row that was never drawn is reported', async ($, on) => {
+    const w = world(on, { text: '+ const x = 1', requestId: DIFF_ID })
+    await $.command.run(ask('why?'))
+    await w.clock.advance(200)
+    expect(w.toasts).toEqual(["Couldn't find the selection in one of Claude's replies"])
+    expect(w.submitted).toEqual([])
   })
 })

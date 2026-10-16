@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'claude-code/testing'
-import { buildPrompt, claimOf, createThreads } from '../hooks/threads'
+import { buildPrompt, claimOf, createThreads, echoOf, toolSource } from '../hooks/threads'
 
 const anchor = { messageId: 'm1', paragraphIndex: 1 }
 
@@ -8,6 +8,34 @@ describe('buildPrompt', () => {
     expect(buildPrompt('line one\nline two', 'why?')).toBe(
       'About this part of your earlier reply:\n> line one\n> line two\n\nwhy?',
     )
+  })
+  test('names the source when given one', () => {
+    expect(buildPrompt('+ x = 1', 'why?', 'your Edit of a.ts')).toBe('About this part of your Edit of a.ts:\n> + x = 1\n\nwhy?')
+  })
+})
+
+describe('toolSource', () => {
+  test('names the file an Edit or Write touched', () => {
+    expect(toolSource('Edit', { filePath: '/src/a.ts', structuredPatch: [] })).toBe('your Edit of /src/a.ts')
+  })
+  test('falls back to the tool for any other output', () => {
+    expect(toolSource('Bash', { stdout: 'ok', stderr: '' })).toBe("your Bash call's output")
+    expect(toolSource('Bash', 'ok')).toBe("your Bash call's output")
+    expect(toolSource('Bash', null)).toBe("your Bash call's output")
+  })
+})
+
+describe('echoOf', () => {
+  test('quotes the selection after the question', () => {
+    const thread = createThreads().add(anchor, 'why?', 'P', undefined, 'short bit')
+    expect(echoOf(thread)).toBe('• why?: “short bit”')
+  })
+  test('cuts the selection to 20 characters, whitespace collapsed', () => {
+    const thread = createThreads().add(anchor, 'why?', 'P', undefined, '  a long\n  selection that goes on ')
+    expect(echoOf(thread)).toBe('• why?: “a long selection tha…”')
+  })
+  test('a thread with no selection echoes the question alone', () => {
+    expect(echoOf(createThreads().add(anchor, 'why?', 'P'))).toBe('• why?')
   })
 })
 
@@ -182,6 +210,9 @@ describe('createThreads', () => {
     threads.setReply(t, 'a1', 'The answer is **forty**  two.')
     expect(threads.findByText('forty two')).toBe(t)
     expect(threads.findByText('what is')).toBe(t)
+    expect(threads.findByText('• what is it?')).toBe(t) // the question as drawn, bullet included
+    const quoted = threads.add(anchor, 'and?', 'P2', undefined, 'some selected words here')
+    expect(threads.findByText('• and?: “some selected words…”')).toBe(quoted)
     expect(threads.findByText('nowhere')).toBeUndefined()
     expect(threads.findByText('')).toBeUndefined()
     expect(threads.findByText('   ')).toBeUndefined()
@@ -192,6 +223,13 @@ describe('createThreads', () => {
     threads.add(anchor, 'why the sky?', 'P1')
     const b = threads.add({ messageId: 'm2', paragraphIndex: 0 }, 'why the sky, again?', 'P2')
     expect(threads.findByText('why the sky')).toBe(b)
+  })
+  test('findByText with a row id looks only at the threads drawn in that row', () => {
+    const threads = createThreads()
+    const a = threads.add(anchor, 'why the sky?', 'P1')
+    threads.add({ messageId: 'm2', paragraphIndex: 0 }, 'why the sky, again?', 'P2')
+    expect(threads.findByText('why the sky', 'm1')).toBe(a)
+    expect(threads.findByText('why the sky', 'tool-1')).toBeUndefined()
   })
   test('add stores the parent a follow-up nests under', () => {
     const threads = createThreads()
